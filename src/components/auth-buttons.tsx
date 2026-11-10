@@ -1,4 +1,6 @@
 import { signIn, signOut } from "@/auth";
+import { GoogleIcon } from "./icons";
+import { SubmitButton } from "./submit-button";
 
 export function SignInButton() {
   return (
@@ -9,12 +11,13 @@ export function SignInButton() {
         await signIn("google", { redirectTo: "/" });
       }}
     >
-      <button
-        type="submit"
-        className="flex h-12 items-center justify-center rounded-full bg-foreground px-6 font-medium text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc]"
+      <SubmitButton
+        pendingLabel="Redirecting to Google…"
+        className="h-12 rounded-full border border-border bg-surface px-6 font-medium text-foreground shadow-sm hover:bg-surface-muted"
       >
+        <GoogleIcon className="size-5" />
         Sign in with Google
-      </button>
+      </SubmitButton>
     </form>
   );
 }
@@ -27,12 +30,12 @@ export function SignOutButton() {
         await signOut({ redirectTo: "/" });
       }}
     >
-      <button
-        type="submit"
-        className="rounded-full border border-black/[.08] px-4 py-2 text-sm font-medium transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"
+      <SubmitButton
+        pendingLabel="Logging out…"
+        className="h-9 rounded-full border border-border px-4 text-sm font-medium text-foreground hover:bg-surface-muted"
       >
         Log out
-      </button>
+      </SubmitButton>
     </form>
   );
 }

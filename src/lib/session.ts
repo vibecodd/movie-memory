@@ -1,6 +1,7 @@
 import "server-only";
 import { cache } from "react";
 import { redirect } from "next/navigation";
+import { connection } from "next/server";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
 
@@ -19,6 +20,9 @@ export type CurrentUser = {
 
 /** The signed-in user, or null. Deduplicated per request. */
 export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
+  // Session reads must happen at request time: auth() re-encrypts the JWT
+  // with random bytes, which Next rejects during prerendering.
+  await connection();
   const session = await auth();
   const uid = session?.user?.id;
   if (!uid) return null;

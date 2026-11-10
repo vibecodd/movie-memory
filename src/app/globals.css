@@ -1,26 +1,195 @@
 @import "tailwindcss";
 
+/*
+ * Design tokens. Warm "cinema" palette: near-black theatre in dark mode,
+ * off-white ticket paper in light mode, amber marquee-light accent.
+ */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #faf7f2;
+  --foreground: #1c1917;
+  --surface: #ffffff;
+  --surface-muted: #f3eee6;
+  --border: #e7e0d5;
+  --muted: #78716c;
+  --accent: #d97706;
+  --accent-hover: #b45309;
+  --accent-foreground: #ffffff;
+  --accent-soft: #fef3c7;
+  --danger: #dc2626;
+  --film: #292524;
+  --film-hole: #faf7f2;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0c0a09;
+    --foreground: #f5f5f4;
+    --surface: #1c1917;
+    --surface-muted: #161412;
+    --border: #2e2a27;
+    --muted: #a8a29e;
+    --accent: #f59e0b;
+    --accent-hover: #fbbf24;
+    --accent-foreground: #1c1917;
+    --accent-soft: #3a2a0c;
+    --danger: #f87171;
+    --film: #050404;
+    --film-hole: #3a332d;
+  }
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-border: var(--border);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent-soft: var(--accent-soft);
+  --color-danger: var(--danger);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --font-display: var(--font-fraunces);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+}
+
+/* ---------- Loading states ---------- */
+
+/* Skeleton block with an amber light sweeping across it. */
+.shimmer {
+  position: relative;
+  overflow: hidden;
+  background: var(--surface-muted);
+}
+.shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    100deg,
+    transparent 20%,
+    color-mix(in srgb, var(--accent) 16%, transparent) 50%,
+    transparent 80%
+  );
+  animation: shimmer 1.6s ease-in-out infinite;
+}
+@keyframes shimmer {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+/* Film strip rolling through the projector (fun-fact loader). */
+.film-strip {
+  position: relative;
+  height: 3.5rem;
+  overflow: hidden;
+  border-radius: 0.75rem;
+  background: var(--film);
+}
+.film-strip::before,
+.film-strip::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  z-index: 1;
+  height: 5px;
+  background: repeating-linear-gradient(
+    90deg,
+    var(--film-hole) 0 8px,
+    transparent 8px 18px
+  );
+  border-radius: 2px;
+  animation: film-holes 0.6s linear infinite;
+}
+.film-strip::before {
+  top: 4px;
+}
+.film-strip::after {
+  bottom: 4px;
+}
+.film-frames {
+  position: absolute;
+  inset-block: 13px;
+  left: 0;
+  display: flex;
+  gap: 6px;
+  width: max-content;
+  animation: film-roll 4s linear infinite;
+}
+.film-frame {
+  width: 3.25rem;
+  border-radius: 3px;
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--accent) var(--tint, 55%), var(--film)),
+    color-mix(in srgb, var(--accent) 15%, var(--film))
+  );
+}
+@keyframes film-roll {
+  to {
+    transform: translateX(-50%);
+  }
+}
+@keyframes film-holes {
+  to {
+    background-position-x: -18px;
+  }
+}
+
+/* Rotating loader message. */
+.fade-up {
+  animation: fade-up 0.35s ease-out both;
+}
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+/* Typing caret shown while the fact streams in. */
+.caret {
+  display: inline-block;
+  width: 0.55ch;
+  height: 1.1em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  border-radius: 1px;
+  background: var(--accent);
+  animation: blink 1s steps(1) infinite;
+}
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shimmer::after,
+  .film-strip::before,
+  .film-strip::after,
+  .film-frames,
+  .fade-up,
+  .caret {
+    animation: none;
+  }
+}
+
+/* Soft marquee glow behind the landing hero. */
+.marquee-glow {
+  background: radial-gradient(
+    ellipse at top,
+    color-mix(in srgb, var(--accent) 22%, transparent),
+    transparent 60%
+  );
 }
