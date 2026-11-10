@@ -3,58 +3,97 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { RefreshIcon, SparkleIcon, Spinner } from "@/components/icons";
-import type { FactFallback } from "@/lib/facts";
+import type { FactEvent, FactSource } from "@/lib/facts";
 import { FactLoader } from "./fact-loader";
+
+/** Mirrors CACHE_WINDOW_SECONDS on the server (lib/facts.ts). */
+const CACHE_WINDOW_MS = 60_000;
+const FRIENDLY_ERROR = "Couldn't generate a fun fact right now. Please try again in a moment.";
 
 type Phase =
   | { kind: "loading" }
   | { kind: "streaming"; text: string }
-  | { kind: "done"; text: string }
-  | { kind: "fallback"; text: string }
-  | { kind: "interrupted"; text: string }
-  | { kind: "unavailable" }
+  | { kind: "fact"; text: string; source: FactSource; createdAt: number; receivedAt: number }
+  | { kind: "error"; message: string }
   | { kind: "redirect"; to: string };
 
 /**
- * Request a new fact from POST /api/fact and report progress via `onPhase`
- * as the text streams in. Aborting `signal` cancels it (the server then
- * skips saving the fact) and suppresses further updates.
+ * Request a fact from POST /api/fact and report progress via `onPhase` while
+ * the NDJSON event stream arrives. Aborting `signal` cancels it (the server
+ * then stores nothing and releases its lock).
  */
 async function streamFact(signal: AbortSignal, onPhase: (phase: Phase) => void) {
   let text = "";
+  let finished = false;
+  const handle = (event: FactEvent) => {
+    if (event.type === "delta") {
+      text += event.text;
+      onPhase({ kind: "streaming", text });
+    } else if (event.type === "fact") {
+      finished = true;
+      onPhase({
+        kind: "fact",
+        text: event.content,
+        source: event.source,
+        createdAt: Date.parse(event.created_at),
+        receivedAt: Date.now(),
+      });
+    } else {
+      finished = true;
+      onPhase({ kind: "error", message: event.message });
+    }
+  };
+
   try {
     const res = await fetch("/api/fact", { method: "POST", signal });
     if (res.status === 401) return onPhase({ kind: "redirect", to: "/" });
     if (res.status === 409) return onPhase({ kind: "redirect", to: "/onboarding" });
     if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
 
-    // JSON means generation couldn't start; show a stored fact if any.
-    if (res.headers.get("content-type")?.includes("application/json")) {
-      const body = (await res.json()) as FactFallback;
-      return onPhase(
-        body.status === "fallback" ? { kind: "fallback", text: body.content } : { kind: "unavailable" },
-      );
-    }
-
     const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
+    let buffer = "";
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
-      text += value;
-      onPhase({ kind: "streaming", text });
+      buffer += value;
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      for (const line of lines) if (line.trim()) handle(JSON.parse(line) as FactEvent);
     }
-    onPhase({ kind: "done", text: text.trim() });
+    if (!finished) throw new Error("stream ended early");
   } catch {
     if (signal.aborted) return;
-    onPhase(text ? { kind: "interrupted", text } : { kind: "unavailable" });
+    onPhase({ kind: "error", message: FRIENDLY_ERROR });
   }
 }
 
-/** Fun-fact card: streams a new fact on mount and on "Another fact". */
+/**
+ * Seconds until a new fact can be generated (0 = now). Ticks every second;
+ * `receivedAt` keeps the first render after a fact arrives from using a
+ * stale clock.
+ */
+function useCooldown(fact: { createdAt: number; receivedAt: number } | null) {
+  const [now, setNow] = useState(() => Date.now());
+  const createdAt = fact?.createdAt ?? null;
+  useEffect(() => {
+    if (createdAt === null) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [createdAt]);
+  if (!fact) return 0;
+  const current = Math.max(now, fact.receivedAt);
+  return Math.max(0, Math.ceil((fact.createdAt + CACHE_WINDOW_MS - current) / 1000));
+}
+
+const SOURCE_NOTE: Partial<Record<FactSource, string>> = {
+  fallback: "Showing a previous fact; couldn't generate a new one right now.",
+};
+
+/** Fun-fact card: streams a fact on mount and on "Another fact". */
 export function FactCard() {
   const router = useRouter();
   const [phase, setPhase] = useState<Phase>({ kind: "loading" });
-  // Bumped by "Another fact" to start a new generation.
+  // Bumped by "Another fact" to start a new request.
   const [run, setRun] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -71,6 +110,8 @@ export function FactCard() {
     if (phase.kind === "redirect") router.replace(phase.to);
   }, [phase, router]);
 
+  // Facts are cached server-side for 60s; a fallback fact doesn't block retries.
+  const cooldown = useCooldown(phase.kind === "fact" && phase.source !== "fallback" ? phase : null);
   const busy = phase.kind === "loading" || phase.kind === "streaming";
 
   return (
@@ -87,38 +128,27 @@ export function FactCard() {
             setPhase({ kind: "loading" });
             setRun((n) => n + 1);
           }}
-          disabled={busy}
-          className="inline-flex h-9 items-center gap-2 rounded-full bg-accent px-4 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent-hover disabled:cursor-wait disabled:opacity-70"
+          disabled={busy || cooldown > 0}
+          className="inline-flex h-9 items-center gap-2 rounded-full bg-accent px-4 text-sm font-medium tabular-nums text-accent-foreground transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60"
         >
           {busy ? <Spinner className="size-4" /> : <RefreshIcon className="size-4" />}
-          {busy ? "Finding a fact…" : "Another fact"}
+          {busy ? "Finding a fact…" : cooldown > 0 ? `New fact in ${cooldown}s` : "Another fact"}
         </button>
       </div>
 
       <div className="mt-4" aria-live="polite" aria-busy={busy}>
         {(phase.kind === "loading" || phase.kind === "redirect") && <FactLoader />}
 
-        {phase.kind === "unavailable" && (
-          <p className="text-muted">
-            Couldn&apos;t generate a fun fact right now. Please try again in a moment.
-          </p>
-        )}
+        {phase.kind === "error" && <p className="text-muted">{phase.message}</p>}
 
-        {"text" in phase && (
+        {(phase.kind === "streaming" || phase.kind === "fact") && (
           <>
             <p className="text-lg leading-relaxed">
               {phase.text}
               {phase.kind === "streaming" && <span className="caret" aria-hidden="true" />}
             </p>
-            {phase.kind === "fallback" && (
-              <p className="mt-3 text-sm text-muted">
-                Showing a previous fact; couldn&apos;t generate a new one right now.
-              </p>
-            )}
-            {phase.kind === "interrupted" && (
-              <p className="mt-3 text-sm text-muted">
-                The fact got cut off. Try &ldquo;Another fact&rdquo;.
-              </p>
+            {phase.kind === "fact" && SOURCE_NOTE[phase.source] && (
+              <p className="mt-3 text-sm text-muted">{SOURCE_NOTE[phase.source]}</p>
             )}
           </>
         )}
