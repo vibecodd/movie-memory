@@ -36,7 +36,9 @@ export async function streamMovieFact(
     {
       model: FACT_MODEL,
       ...(IS_REASONING_MODEL && { reasoning: { effort: "low" } }),
-      max_output_tokens: 400,
+      // Includes hidden reasoning tokens on reasoning models; too low a cap
+      // ends the response as "incomplete" before the fact is finished.
+      max_output_tokens: 1200,
       instructions: INSTRUCTIONS,
       input: `Movie title: ${JSON.stringify(movie)}`,
       stream: true,
@@ -53,8 +55,12 @@ export async function streamMovieFact(
         case "error":
           throw new Error(`OpenAI stream error: ${event.message}`);
         case "response.failed":
+          throw new Error(`OpenAI response failed: ${event.response.error?.message ?? "unknown"}`);
         case "response.incomplete":
-          throw new Error(`OpenAI response ${event.response.status}`);
+          // Truncated output: never store a half-finished fact.
+          throw new Error(
+            `OpenAI response incomplete: ${event.response.incomplete_details?.reason ?? "unknown"}`,
+          );
       }
     }
   })();

@@ -6,7 +6,14 @@ import { PrismaClient } from "@/generated/prisma/client";
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
 function createClient() {
-  const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
+  const adapter = new PrismaPg({
+    connectionString: process.env.DATABASE_URL,
+    // Prisma sends DateTime values as UTC text without an offset; Postgres
+    // reads such text in the session time zone. Pin sessions to UTC so
+    // timestamptz values are stored as the instant Prisma meant, whatever
+    // the server's default TimeZone is.
+    options: "-c TimeZone=UTC",
+  });
   return new PrismaClient({ adapter });
 }
 

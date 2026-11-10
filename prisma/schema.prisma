@@ -15,19 +15,27 @@ datasource db {
 //
 // Naming: snake_case everywhere. Model and field names are identical to the
 // DB table and column names (no @map), so code, SQL and pgAdmin all match.
+//
+// Timestamps are timestamptz: they are absolute instants, so comparisons
+// (60s cache window, generation lease) are correct regardless of the DB
+// session time zone.
 
 model users {
-  id             String        @id @default(cuid())
+  id                         String        @id @default(cuid())
   /// Google's stable account id (`sub` claim). Identity key for sign-in upserts.
-  google_id      String        @unique
-  name           String?
-  email          String?
-  image          String?
+  google_id                  String        @unique
+  name                       String?
+  email                      String?
+  image                      String?
   /// null => first-time user (send to /onboarding)
-  favorite_movie String?       @db.VarChar(200)
-  created_at     DateTime      @default(now())
-  updated_at     DateTime      @updatedAt
-  movie_facts    movie_facts[]
+  favorite_movie             String?       @db.VarChar(200)
+  /// Burst guard: set while one request generates a fact for this user,
+  /// cleared when it finishes. Treated as expired after a lease timeout so a
+  /// crashed request cannot block generation forever.
+  fact_generation_started_at DateTime?     @db.Timestamptz(3)
+  created_at                 DateTime      @default(now()) @db.Timestamptz(3)
+  updated_at                 DateTime      @updatedAt @db.Timestamptz(3)
+  movie_facts                movie_facts[]
 }
 
 model movie_facts {
@@ -38,8 +46,9 @@ model movie_facts {
   content    String   @db.Text
   /// OpenAI model that produced the fact
   model      String
-  created_at DateTime @default(now())
+  created_at DateTime @default(now()) @db.Timestamptz(3)
   user       users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
-  @@index([user_id, created_at(sort: Desc)])
+  /// Serves "latest fact for this user + movie" (cache check and fallback).
+  @@index([user_id, movie, created_at(sort: Desc)])
 }
