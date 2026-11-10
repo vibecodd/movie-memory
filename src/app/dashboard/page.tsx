@@ -1,18 +1,22 @@
 import { Suspense } from "react";
 import Image from "next/image";
-import { connection } from "next/server";
+import { AppHeader } from "@/components/app-header";
 import { SignOutButton } from "@/components/auth-buttons";
-import { getFactForUser } from "@/lib/facts";
-import { requireOnboardedUser } from "@/lib/session";
+import { requireOnboardedUser, type CurrentUser } from "@/lib/session";
+import { FactCard } from "./fact-card";
 
-// Functional but minimally styled; the UI is polished on the frontend branch.
 export default function DashboardPage() {
   return (
-    <main className="mx-auto flex w-full max-w-xl flex-1 flex-col gap-8 px-6 py-16">
-      <Suspense fallback={<p>Loading…</p>}>
-        <Dashboard />
-      </Suspense>
-    </main>
+    <>
+      <AppHeader>
+        <SignOutButton />
+      </AppHeader>
+      <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-6 px-4 py-10 sm:px-6">
+        <Suspense fallback={<DashboardSkeleton />}>
+          <Dashboard />
+        </Suspense>
+      </main>
+    </>
   );
 }
 
@@ -21,58 +25,67 @@ async function Dashboard() {
 
   return (
     <>
-      <header className="flex items-center gap-4">
-        {user.image && (
-          <Image
-            src={user.image}
-            alt=""
-            width={64}
-            height={64}
-            className="rounded-full"
-          />
-        )}
-        <div className="flex-1">
-          <h1 className="text-2xl font-semibold">{user.name ?? "Movie fan"}</h1>
-          {user.email && (
-            <p className="text-zinc-600 dark:text-zinc-400">{user.email}</p>
-          )}
+      <section className="flex items-center gap-4 rounded-3xl border border-border bg-surface p-6">
+        <Avatar user={user} />
+        <div className="min-w-0">
+          <h1 className="truncate font-display text-2xl font-semibold">
+            {user.name ?? "Movie fan"}
+          </h1>
+          {user.email && <p className="truncate text-muted">{user.email}</p>}
         </div>
-        <SignOutButton />
-      </header>
-
-      <section>
-        <h2 className="text-sm uppercase text-zinc-500">Favorite movie</h2>
-        <p className="text-xl">{user.favorite_movie}</p>
       </section>
 
-      <section>
-        <h2 className="text-sm uppercase text-zinc-500">Fun fact</h2>
-        {/* Streams in separately so the OpenAI call doesn't block the page. */}
-        <Suspense fallback={<p>Generating a fun fact…</p>}>
-          <MovieFact user={user} />
-        </Suspense>
+      <section className="rounded-3xl border border-border bg-surface p-6">
+        <p className="font-mono text-xs uppercase tracking-widest text-muted">Favorite movie</p>
+        <p className="mt-2 break-words font-display text-3xl font-semibold sm:text-4xl">
+          {user.favorite_movie}
+        </p>
       </section>
+
+      {/* Streams the fact from POST /api/fact on the client. */}
+      <FactCard />
     </>
   );
 }
 
-async function MovieFact({ user }: { user: { id: string; favorite_movie: string } }) {
-  // Only generate for a real request, never during prerender or prefetch:
-  // each generation costs an OpenAI call and inserts a row.
-  await connection();
-  const fact = await getFactForUser(user);
-
-  if (fact.status === "unavailable") {
-    return <p>Couldn&apos;t generate a fun fact right now. Please try again later.</p>;
+function Avatar({ user }: { user: CurrentUser }) {
+  if (user.image) {
+    return (
+      <Image
+        src={user.image}
+        alt=""
+        width={64}
+        height={64}
+        className="size-16 shrink-0 rounded-full border border-border"
+      />
+    );
   }
+  const initial = (user.name ?? user.email ?? "?").charAt(0).toUpperCase();
   return (
-    <>
-      <p>{fact.content}</p>
-      {fact.status === "fallback" && (
-        <p className="text-sm text-zinc-500">
-          Showing a previous fact; couldn&apos;t generate a new one right now.
-        </p>
-      )}
-    </>
+    <span className="flex size-16 shrink-0 items-center justify-center rounded-full bg-accent-soft font-display text-2xl font-semibold text-accent">
+      {initial}
+    </span>
+  );
+}
+
+function DashboardSkeleton() {
+  return (
+    <div className="flex flex-col gap-6" role="status" aria-label="Loading dashboard">
+      <div className="flex items-center gap-4 rounded-3xl border border-border bg-surface p-6">
+        <div className="shimmer size-16 shrink-0 rounded-full" />
+        <div className="flex flex-1 flex-col gap-2">
+          <div className="shimmer h-6 w-40 rounded-full" />
+          <div className="shimmer h-4 w-56 rounded-full" />
+        </div>
+      </div>
+      <div className="flex flex-col gap-3 rounded-3xl border border-border bg-surface p-6">
+        <div className="shimmer h-3 w-28 rounded-full" />
+        <div className="shimmer h-9 w-2/3 rounded-full" />
+      </div>
+      <div className="flex flex-col gap-3 rounded-3xl border border-accent/30 bg-accent-soft/60 p-6">
+        <div className="shimmer h-3 w-24 rounded-full" />
+        <div className="shimmer h-14 w-full rounded-xl" />
+      </div>
+    </div>
   );
 }

@@ -20,17 +20,42 @@ const INSTRUCTIONS = [
   "If you don't recognize the title, say so briefly instead of inventing facts.",
 ].join(" ");
 
-/** Ask OpenAI for one fun fact about `movie`. Throws on API errors or empty output. */
-export async function generateMovieFact(movie: string): Promise<string> {
-  const response = await getClient().responses.create({
-    model: FACT_MODEL,
-    ...(IS_REASONING_MODEL && { reasoning: { effort: "low" } }),
-    max_output_tokens: 400,
-    instructions: INSTRUCTIONS,
-    input: `Movie title: ${JSON.stringify(movie)}`,
-  });
+/**
+ * Start streaming one fun fact about `movie`.
+ *
+ * Resolves once OpenAI has accepted the request, so API errors (bad key, no
+ * credits, rate limit) throw here, before any text is produced. The returned
+ * iterator yields text deltas and throws if the response fails midway.
+ * Aborting `signal` cancels the OpenAI request.
+ */
+export async function streamMovieFact(
+  movie: string,
+  signal?: AbortSignal,
+): Promise<AsyncIterable<string>> {
+  const events = await getClient().responses.create(
+    {
+      model: FACT_MODEL,
+      ...(IS_REASONING_MODEL && { reasoning: { effort: "low" } }),
+      max_output_tokens: 400,
+      instructions: INSTRUCTIONS,
+      input: `Movie title: ${JSON.stringify(movie)}`,
+      stream: true,
+    },
+    { signal },
+  );
 
-  const text = response.output_text.trim();
-  if (!text) throw new Error(`OpenAI returned no text (status: ${response.status})`);
-  return text;
+  return (async function* () {
+    for await (const event of events) {
+      switch (event.type) {
+        case "response.output_text.delta":
+          yield event.delta;
+          break;
+        case "error":
+          throw new Error(`OpenAI stream error: ${event.message}`);
+        case "response.failed":
+        case "response.incomplete":
+          throw new Error(`OpenAI response ${event.response.status}`);
+      }
+    }
+  })();
 }
