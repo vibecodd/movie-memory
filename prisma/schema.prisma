@@ -1,0 +1,45 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// Sessions are JWT cookies (Auth.js, no adapter), so there are no
+// Account / Session / VerificationToken tables.
+//
+// Naming: snake_case everywhere. Model and field names are identical to the
+// DB table and column names (no @map), so code, SQL and pgAdmin all match.
+
+model users {
+  id             String        @id @default(cuid())
+  /// Google's stable account id (`sub` claim). Identity key for sign-in upserts.
+  google_id      String        @unique
+  name           String?
+  email          String?
+  image          String?
+  /// null => first-time user (send to /onboarding)
+  favorite_movie String?       @db.VarChar(200)
+  created_at     DateTime      @default(now())
+  updated_at     DateTime      @updatedAt
+  movie_facts    movie_facts[]
+}
+
+model movie_facts {
+  id         String   @id @default(cuid())
+  user_id    String
+  /// snapshot of the movie title this fact was generated for
+  movie      String   @db.VarChar(200)
+  content    String   @db.Text
+  /// OpenAI model that produced the fact
+  model      String
+  created_at DateTime @default(now())
+  user       users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id, created_at(sort: Desc)])
+}
