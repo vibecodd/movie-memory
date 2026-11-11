@@ -313,3 +313,40 @@ tables, so the setup refuses any database whose name doesn't end in `_test`.
 - **LLM facts can be wrong.** A small model at low reasoning effort is fast
   and cheap but sometimes invents trivia. Use a larger `OPENAI_MODEL` if
   accuracy matters more than latency.
+
+---
+
+## What I'd improve with 2 more hours
+
+1. **CI.** Add a GitHub Actions workflow that runs lint, type-check and
+   `npm test` against a Postgres service container on every pull request.
+2. **Per-user cost cap.** The 60 s cache stops bursts, but someone could still
+   click once a minute indefinitely. I'd add a limit on new generations per
+   hour. It's one indexed count query on `movie_facts`, and the user would get
+   their latest fact once they hit it.
+3. **Fewer repeated facts.** Send the user's last few facts in the prompt so
+   the model picks a different angle each time.
+4. **End-to-end tests.** Add Playwright tests for sign-in → onboarding →
+   dashboard, with OpenAI mocked, to cover redirects and the streaming UI.
+   Backend tests don't reach these.
+5. **Observability.** Log cache hit rate, OpenAI latency, and how often the
+   fallback is used, so the 60 s window and the timeouts can be tuned from
+   real data.
+
+## AI usage
+
+- I used Claude Code (Anthropic's coding agent) as a pair programmer for
+  scaffolding, implementation, tests, debugging and documentation.
+- I made the design decisions, and the AI proposed options and tradeoffs. For
+  example, I dropped the Auth.js adapter tables in favor of JWT sessions, chose
+  snake_case naming and a single favorite movie, and chose Variant A.
+- Next.js 16 changed several APIs, so the AI read the version-specific docs
+  bundled in `node_modules/next/dist/docs/` before writing code.
+- I verified the AI's output rather than trusting it: production builds,
+  manual checks of every screen, tests against a real Postgres database, and
+  deliberately broken code to confirm the tests catch bugs.
+- That verification caught real bugs in AI-written code. Stored timestamps
+  were shifted 5 hours by the database time zone, and an output-token limit
+  cut off some answers. Both are fixed, and the time zone bug has a regression
+  test.
+- Commit messages and this README were drafted with AI and reviewed by me.
